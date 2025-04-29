@@ -1,0 +1,25 @@
+@keyframes flashGreen {
+  0% {
+    background-color: rgba(16, 185, 129, 0.3);
+  }
+  100% {
+    background-color: transparent;
+  }
+}
+
+@keyframes flashRed {
+  0% {
+    background-color: rgba(239, 68, 68, 0.3);
+  }
+  100% {
+    background-color: transparent;
+  }
+}
+
+.animate-flash-bid {
+  animation: flashGreen 0.5s ease-out;
+}
+
+.animate-flash-ask {
+  animation: flashRed 0.5s ease-out;
+}
