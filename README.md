@@ -61,7 +61,7 @@ The following were the time slots spent on the task:
 18:15-19:16: Initial implementation of different components and yolo SDK logic to fetch snapshot and keep WS connection. \
 19:17-20:10: Reading the starknet-js sdk and understanding the flow of auth properly. \
 20:10-20:22: Testing the application, ran into 502 Bad Gateway errors when doing Auth. \
-21:20-21:35: Fix TailwindCSS not rendering properly due to misconfiguration. \
+21:20-21:35: Fix TailwindCSS not rendering properly due to misconfiguration.
 
 ### Tuesday 29th April
 
@@ -78,7 +78,9 @@ The following were the time slots spent on the task:
 00:15-2:00: Figure out why websocket connecting was looping. It was due to misconfiguration of credentials in HTTP Client of SDK. \
 2:00-3:00: Fix websocket subscription. Errors were due to not having proper handling of the connection and wrong boolean value on ticker. \
 3:00-3:30: Small improvements to UI for final submission. \
-3:30-3:50: Creation of README for final submission. \
+3:30-3:50: Creation of README for final submission.
+
+**Total time spent: 10 hours and 36 minutes**
 
 ## Conclusions
 The task was a bit challenging, due to the lack of experience with web sockets and the SDK. Also, from the lack of knowledge of how order books were built or what do they represent exactly. The lack of proper frontend experience was also challenging, but an amazing learning experience nonetheless.
