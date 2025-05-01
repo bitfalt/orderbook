@@ -2,8 +2,10 @@ import React, { useEffect, useState, useCallback } from 'react';
 import { LayerAkiraHttpAPI, LayerAkiraWSSAPI, SocketEvent } from 'layerakira-js';
 import { TableLevel, TableUpdate, Snapshot, Result } from 'layerakira-js';
 import OrderBookDisplay from './OrderBookDisplay';
-import { TableLevelWithTotal, OrderBookState } from '../../types/orderbook';
-import { parseTableLevel } from '../../utils/formatter';
+import { OrderBookState } from '../../types/orderbook';
+import { parseTableLevel, formatRowsData} from '../../utils/formatter';
+import { erc20ToDecimals, TARGET_BASE_CURRENCY, TARGET_QUOTE_CURRENCY } from "../../App"
+
 
 interface OrderBookContainerProps {
   httpClient: LayerAkiraHttpAPI;
@@ -18,8 +20,8 @@ const OrderBookContainer: React.FC<OrderBookContainerProps> = ({
   quoteCurrency,
   levels = 10,
 }) => {
-  const [isConnected, setIsConnected] = useState<boolean>(false);
-  const [isLoading, setIsLoading] = useState<boolean>(true);
+  const [isConnected, setIsConnected] = useState<boolean>(true);
+  const [isLoading, setIsLoading] = useState<boolean>(false);
   const [orderBook, setOrderBook] = useState<OrderBookState>({
     bids: [],
     asks: [],
@@ -33,33 +35,19 @@ const OrderBookContainer: React.FC<OrderBookContainerProps> = ({
   // Calculate total volume for depth chart and add running totals
   const processOrderBook = useCallback(
     (bidsArray: TableLevel[], asksArray: TableLevel[]) => {
-      // Sort bids in descending order (highest first)
-      const sortedBids = [...bidsArray].sort((a, b) => Number(b.price - a.price)).slice(0, levels);
+        
+        // Convert the bigint to a number for sorting and display
+        const formattedBids = formatRowsData(bidsArray, erc20ToDecimals[TARGET_BASE_CURRENCY], erc20ToDecimals[TARGET_QUOTE_CURRENCY]);
+        const formattedAsks = formatRowsData(asksArray, erc20ToDecimals[TARGET_BASE_CURRENCY], erc20ToDecimals[TARGET_QUOTE_CURRENCY]);
 
-      // Sort asks in ascending order (lowest first)
-      const sortedAsks = [...asksArray].sort((a, b) => Number(a.price - b.price)).slice(0, levels);
-
-      // Add running totals
-      let bidTotal = 0n;
-      const processedBids: TableLevelWithTotal[] = sortedBids.map(bid => {
-        bidTotal += bid.volume;
-        return { ...bid, total: bidTotal };
-      });
-
-      let askTotal = 0n;
-      const processedAsks: TableLevelWithTotal[] = sortedAsks.map(ask => {
-        askTotal += ask.volume;
-        return { ...ask, total: askTotal };
-      });
-
-      return {
-        bids: processedBids,
-        asks: processedAsks,
-        lastUpdateTime: Date.now(),
-      };
-    },
-    [levels]
-  );
+        return {
+            bids: formattedBids,
+            asks: formattedAsks,
+            lastUpdateTime: Date.now(),
+        };
+        },
+        [levels]
+    );
 
 
   // Initialize WebSocket connection and fetch initial data
@@ -69,6 +57,13 @@ const OrderBookContainer: React.FC<OrderBookContainerProps> = ({
     const initialize = async () => {
       try {
         setIsLoading(true);
+
+        // Add null check for httpClient
+        if (!httpClient) {
+          setError('HTTP client is not initialized yet');
+          setIsLoading(false);
+          return;
+        }
 
         const ticker = {
           pair: {
@@ -82,8 +77,7 @@ const OrderBookContainer: React.FC<OrderBookContainerProps> = ({
         const snapshot: Result<Snapshot> = await httpClient.getSnapshot(
           baseCurrency,
           quoteCurrency,
-          true,
-          levels
+          false
         );
 
         if (snapshot.error) {
@@ -95,6 +89,7 @@ const OrderBookContainer: React.FC<OrderBookContainerProps> = ({
         // Initialize order book with snapshot data
         if (snapshot.result) {
           const bids = parseTableLevel(snapshot.result.levels.bids);
+          console.log('bids', bids);
           const asks = parseTableLevel(snapshot.result.levels.asks);
           const initialOrderBook = processOrderBook(bids, asks);
           setOrderBook(initialOrderBook);
@@ -112,90 +107,94 @@ const OrderBookContainer: React.FC<OrderBookContainerProps> = ({
         // Connect to WebSocket
         wsClient.connect().catch(err => {
           setError(`WebSocket connection error: ${err.message}`);
+          console.error(err);
           setIsConnected(false);
         });
 
-        // Subscribe to depth updates
-        const success = await wsClient.subscribeOnDepthUpdate(ticker, async data => {
-          if (data === SocketEvent.DISCONNECT) {
-            setIsConnected(false);
-            setError('Disconnected from order book stream');
-            return;
-          }
+        // // Subscribe to depth updates
+        // const success = await wsClient.subscribeOnDepthUpdate(ticker, async data => {
+        //   if (data === SocketEvent.DISCONNECT) {
+        //     setIsConnected(false);
+        //     setError('Disconnected from order book stream');
+        //     return;
+        //   }
 
-          setIsConnected(true);
+        //   setIsConnected(true);
 
-          // Track changed prices for animations
-          const newChangedPrices = new Set<string>();
+        //   // Track changed prices for animations
+        //   const newChangedPrices = new Set<string>();
 
-          // Update order book with new data
-          setOrderBook(prevBook => {
-            // Handle TableUpdate from WebSocket
-            const updateData = data as TableUpdate;
+        //   // Update order book with new data
+        //   setOrderBook(prevBook => {
+        //     // Handle TableUpdate from WebSocket
+        //     const updateData = data as TableUpdate;
 
-            // Create a map of existing bids and asks for quick lookup
-            const bidMap = new Map(prevBook.bids.map(bid => [bid.price.toString(), bid]));
-            const askMap = new Map(prevBook.asks.map(ask => [ask.price.toString(), ask]));
+        //     // Create a map of existing bids and asks for quick lookup
+        //     const bidMap = new Map(prevBook.bids.map(bid => [bid.price.toString(), bid]));
+        //     const askMap = new Map(prevBook.asks.map(ask => [ask.price.toString(), ask]));
 
-            // Parse the update data levels
-            const updatedBids = parseTableLevel(updateData.bids);
-            const updatedAsks = parseTableLevel(updateData.asks);
+        //     // Parse the update data levels
+        //     const updatedBids = parseTableLevel(updateData.bids);
+        //     const updatedAsks = parseTableLevel(updateData.asks);
 
-            // Update bids
-            updatedBids.forEach(bid => {
-              const priceKey = bid.price.toString();
-              newChangedPrices.add(priceKey);
+        //     // Update bids
+        //     updatedBids.forEach(bid => {
+        //       const priceKey = bid.price.toString();
+        //       newChangedPrices.add(priceKey);
 
-              if (bid.volume === 0n) {
-                bidMap.delete(priceKey);
-              } else {
-                bidMap.set(priceKey, bid);
-              }
-            });
+        //       if (bid.volume === 0n) {
+        //         bidMap.delete(priceKey);
+        //       } else {
+        //         bidMap.set(priceKey, bid);
+        //       }
+        //     });
 
-            // Update asks
-            updatedAsks.forEach(ask => {
-              const priceKey = ask.price.toString();
-              newChangedPrices.add(priceKey);
+        //     // Update asks
+        //     updatedAsks.forEach(ask => {
+        //       const priceKey = ask.price.toString();
+        //       newChangedPrices.add(priceKey);
 
-              if (ask.volume === 0n) {
-                askMap.delete(priceKey);
-              } else {
-                askMap.set(priceKey, ask);
-              }
-            });
+        //       if (ask.volume === 0n) {
+        //         askMap.delete(priceKey);
+        //       } else {
+        //         askMap.set(priceKey, ask);
+        //       }
+        //     });
 
-            // Convert maps back to arrays
-            const newBids = Array.from(bidMap.values());
-            const newAsks = Array.from(askMap.values());
+        //     // Convert maps back to arrays
+        //     const newBids = Array.from(bidMap.values());
+        //     const newAsks = Array.from(askMap.values());
 
-            // Process the updated order book
-            return processOrderBook(newBids, newAsks);
-          });
+        //     // Process the updated order book
+        //     return processOrderBook(newBids, newAsks);
+        //   });
 
-          // Set the changed prices for animation
-          setChangedPrices(newChangedPrices);
+        //   // Set the changed prices for animation
+        //   setChangedPrices(newChangedPrices);
 
-          // Clear changed prices after animation duration
-          setTimeout(() => {
-            setChangedPrices(new Set());
-          }, 500);
-        });
+        //   // Clear changed prices after animation duration
+        //   setTimeout(() => {
+        //     setChangedPrices(new Set());
+        //   }, 500);
+        // });
 
-        if (!success) {
-          setError('Failed to subscribe to order book updates');
-        }
+        // if (!success) {
+        //   setError('Failed to subscribe to order book updates');
+        // }
 
         setIsLoading(false);
       } catch (error) {
         setError(
           `Error initializing order book: ${error instanceof Error ? error.message : String(error)}`
         );
+        console.error(error);
         setIsLoading(false);
       }
     };
 
-    initialize();
+    if (httpClient) {
+      initialize();
+    }
 
     // Cleanup
     return () => {
@@ -208,30 +207,20 @@ const OrderBookContainer: React.FC<OrderBookContainerProps> = ({
   // Prepare data for display component
   const displayData = {
     bids: orderBook.bids.map(bid => ({
-      price: Number(bid.price),
-      amount: Number(bid.volume),
-      total: bid.total ? Number(bid.total) : 0,
-      rawPrice: bid.price,
-      rawAmount: bid.volume,
-      rawTotal: bid.total || 0n,
+      price: bid.price,
+      amount: bid.amount,
+      total: bid.total,
       isChanged: changedPrices.has(bid.price.toString()),
     })),
     asks: orderBook.asks.map(ask => ({
-      price: Number(ask.price),
-      amount: Number(ask.volume),
-      total: ask.total ? Number(ask.total) : 0,
-      rawPrice: ask.price,
-      rawAmount: ask.volume,
-      rawTotal: ask.total || 0n,
+      price: ask.price,
+      amount: ask.amount,
+      total: ask.total,
       isChanged: changedPrices.has(ask.price.toString()),
-    })),
-    maxTotal:
-      Math.max(
-        orderBook.bids.length ? Number(orderBook.bids[orderBook.bids.length - 1].total || 0n) : 0,
-        orderBook.asks.length ? Number(orderBook.asks[orderBook.asks.length - 1].total || 0n) : 0
-      ) /
-      10 ** 2,
+    }))
   };
+
+  console.log('displayData', displayData);
 
   return (
     <div className="w-full">
@@ -271,7 +260,6 @@ const OrderBookContainer: React.FC<OrderBookContainerProps> = ({
           <OrderBookDisplay
             bids={displayData.bids}
             asks={displayData.asks}
-            maxTotal={displayData.maxTotal}
             baseCurrency={baseCurrency}
             quoteCurrency={quoteCurrency}
           />

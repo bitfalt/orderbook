@@ -5,8 +5,6 @@ import { OrderBookRow as OrderBookRowType } from '../../types/orderbook';
 interface OrderBookListProps {
   type: 'bid' | 'ask';
   data: OrderBookRowType[];
-  maxTotal: number;
-  isMobile: boolean;
   reverse?: boolean;
   showHeader?: boolean;
 }
@@ -14,23 +12,13 @@ interface OrderBookListProps {
 const OrderBookList: React.FC<OrderBookListProps> = ({
   type,
   data,
-  maxTotal,
-  isMobile,
   reverse = false,
   showHeader = true,
 }) => {
   // Determine column arrangement based on type and device
   // TODO: Improve this logic
   const getHeaderLayout = () => {
-    if (isMobile) {
-      return (
-        <>
-          <div className="w-1/3 text-left">Price</div>
-          <div className="w-1/3 text-right">Amount</div>
-          <div className="w-1/3 text-right">Total</div>
-        </>
-      );
-    } else if (type === 'bid' && reverse) {
+    if (type === 'bid' && reverse) {
       return (
         <>
           <div className="w-1/3 text-left">Total</div>
@@ -60,11 +48,9 @@ const OrderBookList: React.FC<OrderBookListProps> = ({
       <div className="w-full">
         {data.map((row, index) => (
           <OrderBookRow
-            key={`${type}-${row.rawPrice.toString()}-${index}`}
+            key={`${type}-${row.price}-${index}`}
             row={row}
             type={type}
-            maxTotal={maxTotal}
-            isMobile={isMobile}
             reverse={reverse}
           />
         ))}

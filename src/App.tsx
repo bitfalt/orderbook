@@ -2,35 +2,30 @@ import { useState, useEffect } from 'react';
 import { castToApiSignature, LayerAkiraHttpAPI, LayerAkiraHttpConfig } from 'layerakira-js';
 import { ERC20Token, ERCToDecimalsMap } from 'layerakira-js';
 import OrderBookContainer from './components/OrderBook/OrderBookContainer';
-import { getTypedDataForJWT, StarknetDomain } from 'layerakira-js';
+import { getTypedDataForJWT, getDomain} from 'layerakira-js';
 import { Signer } from 'starknet';
+import { convertToBigintRecursively } from 'layerakira-js/dist/api/http/utils';
 
-const STRK: ERC20Token = 'STRK';
-const USDC: ERC20Token = 'USDC';
-const BASE_FEE_TOKEN: ERC20Token = STRK;
+const AETH: ERC20Token = 'AETH';
+const AUSDC: ERC20Token = 'AUSDC';
+const BASE_FEE_TOKEN: ERC20Token = AETH;
 
-const erc20ToDecimals: ERCToDecimalsMap = {
-  [STRK]: 18,
-  [USDC]: 6,
+export const erc20ToDecimals: ERCToDecimalsMap = {
+  [AETH]: 18,
+  [AUSDC]: 6,
 };
 
 // Target market for the order book
-const TARGET_BASE_CURRENCY: ERC20Token = STRK;
-const TARGET_QUOTE_CURRENCY: ERC20Token = USDC;
+export const TARGET_BASE_CURRENCY: ERC20Token = AETH;
+export const TARGET_QUOTE_CURRENCY: ERC20Token = AUSDC;
 const ORDER_BOOK_LEVELS = 10;
 
-// JWT for Auth
-const MESSAGE_JWT = 42n;
-const domain: StarknetDomain = {
-  name: 'LayerAkira Mobile',
-  version: '1',
-  chainId: '0x534e5f4d41494e',
-};
-const signer = new Signer(import.meta.env.VITE_SIGNER_PRIVATE_KEY);
+
+const signer = new Signer(import.meta.env.VITE_PRIVATE_KEY);
 
 function App() {
   const [httpClient, setHttpClient] = useState<LayerAkiraHttpAPI | null>(null);
-  const [isLoading, setIsLoading] = useState(true);
+  const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -41,9 +36,10 @@ function App() {
         };
         const client = new LayerAkiraHttpAPI(config, erc20ToDecimals, BASE_FEE_TOKEN, console.log);
 
-        const signData = getTypedDataForJWT(MESSAGE_JWT, domain);
-        const signature = await signer.signMessage(signData, import.meta.env.VITE_TRADING_ADDRESS);
-        const jwtResult = await client.auth(MESSAGE_JWT, castToApiSignature(signature));
+        const signData = await client.getSignData(import.meta.env.VITE_PUBLIC_KEY, import.meta.env.VITE_TRADING_ADDRESS);
+        const typedData = convertToBigintRecursively(getTypedDataForJWT(signData.result!, getDomain('0x534e5f5345504f4c4941')));
+        const sign = await signer.signMessage(typedData, import.meta.env.VITE_TRADING_ADDRESS);
+        const jwtResult = await client.auth(signData.result!, castToApiSignature(sign));
 
         client.setCredentials(
           jwtResult.result!,

@@ -6,34 +6,22 @@ import '../../styles/OrderBookRow.css';
 interface OrderBookRowProps {
   row: OrderBookRowType;
   type: 'bid' | 'ask';
-  maxTotal: number;
-  isMobile: boolean;
   reverse?: boolean;
 }
 
 const OrderBookRow: React.FC<OrderBookRowProps> = ({
   row,
   type,
-  maxTotal,
-  isMobile,
   reverse = false,
 }) => {
-  const { price, amount, total, rawTotal, isChanged } = row;
+  const { price, amount, total, isChanged } = row;
 
   const textColorClass = type === 'bid' ? 'text-green-500' : 'text-red-500';
 
   // Layout changes based on device and type
   // TODO: Improve this logic like in OrderBookList.tsx
   const renderRowContent = () => {
-    if (isMobile) {
-      return (
-        <>
-          <div className={`w-1/3 text-left ${textColorClass} font-medium z-10`}>{price}</div>
-          <div className="w-1/3 text-right z-10">{amount}</div>
-          <div className="w-1/3 text-right z-10">{total}</div>
-        </>
-      );
-    } else if (type === 'bid' && reverse) {
+    if (type === 'bid' && reverse) {
       return (
         <>
           <div className="w-1/3 text-left z-10">{total}</div>
@@ -65,8 +53,8 @@ const OrderBookRow: React.FC<OrderBookRowProps> = ({
 
       <VolumeBar
         type={type}
-        percentFilled={(Number(rawTotal) / maxTotal) * 100}
-        isReversed={type === 'bid' && !isMobile && !reverse}
+        percentFilled={30}
+        isReversed={type === 'bid' && !reverse}
       />
     </div>
   );
