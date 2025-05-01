@@ -1,11 +1,24 @@
 import React, { useEffect, useState, useCallback } from 'react';
-import { LayerAkiraHttpAPI, LayerAkiraWSSAPI, SocketEvent } from 'layerakira-js';
-import { TableLevel, TableUpdate, Snapshot, Result } from 'layerakira-js';
+import {
+  LayerAkiraHttpAPI,
+  LayerAkiraWSSAPI,
+  SocketEvent,
+  TableLevel,
+  TableUpdate,
+  Snapshot,
+  Result,
+  BBO,
+} from 'layerakira-js';
 import OrderBookDisplay from './OrderBookDisplay';
 import { OrderBookState } from '../../types/orderbook';
-import { parseTableLevel, formatRowsData} from '../../utils/formatter';
-import { erc20ToDecimals, TARGET_BASE_CURRENCY, TARGET_QUOTE_CURRENCY } from "../../App"
-
+import {
+  parseTableLevel,
+  formatRowsData,
+  formatRowData,
+  sortBids,
+  sortAsks,
+} from '../../utils/formatter';
+import { erc20ToDecimals, TARGET_BASE_CURRENCY, TARGET_QUOTE_CURRENCY } from '../../App';
 
 interface OrderBookContainerProps {
   httpClient: LayerAkiraHttpAPI;
@@ -32,33 +45,128 @@ const OrderBookContainer: React.FC<OrderBookContainerProps> = ({
 
   // TODO: Implement the function to process order book data in different file to make code cleaner and improve logic when possible
 
-  // Calculate total volume for depth chart and add running totals
   const processOrderBook = useCallback(
     (bidsArray: TableLevel[], asksArray: TableLevel[]) => {
-        
-        // Convert the bigint to a number for sorting and display
-        const formattedBids = formatRowsData(bidsArray, erc20ToDecimals[TARGET_BASE_CURRENCY], erc20ToDecimals[TARGET_QUOTE_CURRENCY]);
-        const formattedAsks = formatRowsData(asksArray, erc20ToDecimals[TARGET_BASE_CURRENCY], erc20ToDecimals[TARGET_QUOTE_CURRENCY]);
+      // Convert the bigint to a number for display
+      const formattedBids = formatRowsData(
+        bidsArray,
+        erc20ToDecimals[TARGET_BASE_CURRENCY],
+        erc20ToDecimals[TARGET_QUOTE_CURRENCY]
+      );
+      const formattedAsks = formatRowsData(
+        asksArray,
+        erc20ToDecimals[TARGET_BASE_CURRENCY],
+        erc20ToDecimals[TARGET_QUOTE_CURRENCY]
+      );
+
+      return {
+        bids: formattedBids,
+        asks: formattedAsks,
+        lastUpdateTime: Date.now(),
+      };
+    },
+    [levels]
+  );
+
+  // Websocket callback
+  const handleWebSocketEvent = async (event: TableUpdate | BBO | SocketEvent.DISCONNECT) => {
+    if (event === SocketEvent.DISCONNECT) {
+      setIsConnected(false);
+      setError('Disconnected from order book stream');
+      return;
+    }
+
+    setIsConnected(true);
+
+    console.log('event', event);
+
+    if ('bids' in event && 'asks' in event) {
+      const updateData = event as TableUpdate;
+
+      // Track changed prices for animations
+      const newChangedPrices = new Set<string>();
+
+      setOrderBook(prevBook => {
+        // Create a map of existing bids and asks for quick lookup
+        const bidMap = new Map(prevBook.bids.map(bid => [bid.price, bid]));
+        const askMap = new Map(prevBook.asks.map(ask => [ask.price, ask]));
+
+        const updatedBids = parseTableLevel(updateData.bids);
+        const updatedAsks = parseTableLevel(updateData.asks);
+
+        updatedBids.forEach(bid => {
+          const key = formatRowData(
+            bid,
+            erc20ToDecimals[TARGET_BASE_CURRENCY],
+            erc20ToDecimals[TARGET_QUOTE_CURRENCY]
+          );
+          const priceKey = key.price;
+          newChangedPrices.add(priceKey);
+
+          if (bid.orders === 0) {
+            bidMap.delete(priceKey);
+          } else {
+            bidMap.set(
+              priceKey,
+              formatRowData(
+                bid,
+                erc20ToDecimals[TARGET_BASE_CURRENCY],
+                erc20ToDecimals[TARGET_QUOTE_CURRENCY]
+              )
+            );
+          }
+        });
+
+        updatedAsks.forEach(ask => {
+          const key = formatRowData(
+            ask,
+            erc20ToDecimals[TARGET_BASE_CURRENCY],
+            erc20ToDecimals[TARGET_QUOTE_CURRENCY]
+          );
+          const priceKey = key.price;
+          newChangedPrices.add(priceKey);
+
+          if (ask.orders === 0) {
+            askMap.delete(priceKey);
+          } else {
+            askMap.set(
+              priceKey,
+              formatRowData(
+                ask,
+                erc20ToDecimals[TARGET_BASE_CURRENCY],
+                erc20ToDecimals[TARGET_QUOTE_CURRENCY]
+              )
+            );
+          }
+        });
+
+        const newBids = Array.from(bidMap.values());
+        const newAsks = Array.from(askMap.values());
 
         return {
-            bids: formattedBids,
-            asks: formattedAsks,
-            lastUpdateTime: Date.now(),
+          bids: sortBids(newBids),
+          asks: sortAsks(newAsks),
+          lastUpdateTime: Date.now(),
         };
-        },
-        [levels]
-    );
+      });
 
+      setChangedPrices(newChangedPrices);
+
+      setTimeout(() => {
+        setChangedPrices(new Set());
+      }, 500);
+    }
+  };
 
   // Initialize WebSocket connection and fetch initial data
   useEffect(() => {
     let wsClient: LayerAkiraWSSAPI | null = null;
+    let isMounted = true;
 
     const initialize = async () => {
       try {
         setIsLoading(true);
 
-        // Add null check for httpClient
         if (!httpClient) {
           setError('HTTP client is not initialized yet');
           setIsLoading(false);
@@ -86,101 +194,55 @@ const OrderBookContainer: React.FC<OrderBookContainerProps> = ({
           return;
         }
 
-        // Initialize order book with snapshot data
         if (snapshot.result) {
           const bids = parseTableLevel(snapshot.result.levels.bids);
-          console.log('bids', bids);
           const asks = parseTableLevel(snapshot.result.levels.asks);
           const initialOrderBook = processOrderBook(bids, asks);
           setOrderBook(initialOrderBook);
         }
 
-        // Create WebSocket client
         wsClient = new LayerAkiraWSSAPI(
           import.meta.env.VITE_API_WS_URL,
           httpClient,
-          false,
+          true,
           console.log,
-          5000
+          500
         );
 
-        // Connect to WebSocket
-        wsClient.connect().catch(err => {
-          setError(`WebSocket connection error: ${err.message}`);
-          console.error(err);
-          setIsConnected(false);
+        console.log('Initiating WebSocket connection...');
+        wsClient.connect().catch(error => {
+          console.error('Error initiating WebSocket connection:', error);
+          if (isMounted) setError(`WebSocket Connection Error: ${error}`);
+          if (isMounted) setIsLoading(false);
         });
 
-        // // Subscribe to depth updates
-        // const success = await wsClient.subscribeOnDepthUpdate(ticker, async data => {
-        //   if (data === SocketEvent.DISCONNECT) {
-        //     setIsConnected(false);
-        //     setError('Disconnected from order book stream');
-        //     return;
-        //   }
+        const connectionDelay = 2000;
+        console.log(`Waiting ${connectionDelay}ms for connection before subscribing...`);
+        await new Promise(resolve => setTimeout(resolve, connectionDelay));
 
-        //   setIsConnected(true);
+        if (!isMounted) return;
 
-        //   // Track changed prices for animations
-        //   const newChangedPrices = new Set<string>();
+        console.log('Attempting to subscribe...');
+        if (wsClient) {
+          const subscriptionResult = await wsClient.subscribeOnMarketData(
+            handleWebSocketEvent,
+            SocketEvent.BOOK_DELTA,
+            ticker
+          );
 
-        //   // Update order book with new data
-        //   setOrderBook(prevBook => {
-        //     // Handle TableUpdate from WebSocket
-        //     const updateData = data as TableUpdate;
+          if (!isMounted) return;
 
-        //     // Create a map of existing bids and asks for quick lookup
-        //     const bidMap = new Map(prevBook.bids.map(bid => [bid.price.toString(), bid]));
-        //     const askMap = new Map(prevBook.asks.map(ask => [ask.price.toString(), ask]));
-
-        //     // Parse the update data levels
-        //     const updatedBids = parseTableLevel(updateData.bids);
-        //     const updatedAsks = parseTableLevel(updateData.asks);
-
-        //     // Update bids
-        //     updatedBids.forEach(bid => {
-        //       const priceKey = bid.price.toString();
-        //       newChangedPrices.add(priceKey);
-
-        //       if (bid.volume === 0n) {
-        //         bidMap.delete(priceKey);
-        //       } else {
-        //         bidMap.set(priceKey, bid);
-        //       }
-        //     });
-
-        //     // Update asks
-        //     updatedAsks.forEach(ask => {
-        //       const priceKey = ask.price.toString();
-        //       newChangedPrices.add(priceKey);
-
-        //       if (ask.volume === 0n) {
-        //         askMap.delete(priceKey);
-        //       } else {
-        //         askMap.set(priceKey, ask);
-        //       }
-        //     });
-
-        //     // Convert maps back to arrays
-        //     const newBids = Array.from(bidMap.values());
-        //     const newAsks = Array.from(askMap.values());
-
-        //     // Process the updated order book
-        //     return processOrderBook(newBids, newAsks);
-        //   });
-
-        //   // Set the changed prices for animation
-        //   setChangedPrices(newChangedPrices);
-
-        //   // Clear changed prices after animation duration
-        //   setTimeout(() => {
-        //     setChangedPrices(new Set());
-        //   }, 500);
-        // });
-
-        // if (!success) {
-        //   setError('Failed to subscribe to order book updates');
-        // }
+          if (subscriptionResult.error || !subscriptionResult.result) {
+            console.error('Subscription failed:', subscriptionResult.error || 'No result');
+            setError(`Failed to subscribe: ${subscriptionResult.error || 'Subscription rejected'}`);
+            wsClient.close();
+          } else {
+            console.log('Subscription request successful:', subscriptionResult.result);
+          }
+        } else {
+          console.error('WebSocket client instance not available for subscription.');
+          setError('WebSocket client lost before subscription.');
+        }
 
         setIsLoading(false);
       } catch (error) {
@@ -196,10 +258,12 @@ const OrderBookContainer: React.FC<OrderBookContainerProps> = ({
       initialize();
     }
 
-    // Cleanup
     return () => {
+      isMounted = false;
+      // Cleanup WebSocket connection
       if (wsClient) {
         wsClient.close();
+        wsClient = null;
       }
     };
   }, [httpClient, baseCurrency, quoteCurrency, levels, processOrderBook]);
@@ -210,17 +274,15 @@ const OrderBookContainer: React.FC<OrderBookContainerProps> = ({
       price: bid.price,
       amount: bid.amount,
       total: bid.total,
-      isChanged: changedPrices.has(bid.price.toString()),
+      isChanged: changedPrices.has(bid.price),
     })),
     asks: orderBook.asks.map(ask => ({
       price: ask.price,
       amount: ask.amount,
       total: ask.total,
-      isChanged: changedPrices.has(ask.price.toString()),
-    }))
+      isChanged: changedPrices.has(ask.price),
+    })),
   };
-
-  console.log('displayData', displayData);
 
   return (
     <div className="w-full">
@@ -247,14 +309,16 @@ const OrderBookContainer: React.FC<OrderBookContainerProps> = ({
 
       {!isLoading && !error && (
         <>
-          <div className="flex items-center mb-2">
+          <div className="flex items-center mb-2 bg-gray-800 dark:bg-gray-800 rounded p-2">
             <div
-              className={`h-2 w-2 rounded-full mr-2 ${isConnected ? 'bg-green-500' : 'bg-red-500'}`}
+              className={`h-3 w-3 rounded-full mr-2 ${isConnected ? 'bg-green-500' : 'bg-red-500'} animate-pulse`}
             ></div>
-            <span className="text-xs text-gray-500">
+            <span className="text-xs font-mono text-gray-400 dark:text-gray-400">
               {isConnected ? 'Connected' : 'Disconnected'}
             </span>
-            <span className="text-xs text-gray-500 ml-auto">{new Date().toLocaleTimeString()}</span>
+            <span className="text-xs font-mono text-gray-400 dark:text-gray-400 ml-auto">
+              Last updated: {new Date().toLocaleTimeString()}
+            </span>
           </div>
 
           <OrderBookDisplay

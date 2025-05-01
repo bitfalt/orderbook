@@ -9,14 +9,11 @@ interface OrderBookRowProps {
   reverse?: boolean;
 }
 
-const OrderBookRow: React.FC<OrderBookRowProps> = ({
-  row,
-  type,
-  reverse = false,
-}) => {
-  const { price, amount, total, isChanged } = row;
+const OrderBookRow: React.FC<OrderBookRowProps> = ({ row, type, reverse = false }) => {
+  const { price, amount, total } = row;
 
   const textColorClass = type === 'bid' ? 'text-green-500' : 'text-red-500';
+  const isChanged = true;
 
   // Layout changes based on device and type
   // TODO: Improve this logic like in OrderBookList.tsx
@@ -53,7 +50,7 @@ const OrderBookRow: React.FC<OrderBookRowProps> = ({
 
       <VolumeBar
         type={type}
-        percentFilled={30}
+        percentFilled={(Number(row.amount) / Number(row.total)) * 100}
         isReversed={type === 'bid' && !reverse}
       />
     </div>

@@ -20,8 +20,6 @@ const OrderBookDisplay: React.FC<OrderBookDisplayProps> = ({
   baseCurrency,
   quoteCurrency,
 }) => {
-  // Determine the number of rows to display - find the max length
-  // You might want to limit this further based on screen height or a prop
   const numRows = Math.max(bids.length, asks.length);
   const displayBids = bids.slice(0, numRows);
   const displayAsks = asks.slice(0, numRows);
@@ -37,34 +35,25 @@ const OrderBookDisplay: React.FC<OrderBookDisplayProps> = ({
 
       <div className="flex text-center mb-1 text-gray-500 dark:text-gray-400">
         <div className="w-1/2 pr-1 flex justify-between">
-          <span className="w-1/3 text-left pl-1">AMOUNT</span>{' '}
-          <span className="w-2/3 text-right pr-1">BID PRICE</span>{' '}
+          <span className="w-2/3 text-left pr-1">BID PRICE</span>{' '}
         </div>
         <div className="w-1/2 pl-1 flex justify-between">
           <span className="w-2/3 text-left pl-1">ASK PRICE</span>{' '}
-          <span className="w-1/3 text-right pr-1">AMOUNT</span>{' '}
         </div>
       </div>
 
       <div className="flex w-full">
         {/* Bids Column */}
         <div className="w-1/2 pr-1">
-          <OrderBookList
-            type="bid"
-            data={displayBids}
-          />
+          <OrderBookList type="bid" data={displayBids} />
         </div>
 
         {/* Asks Column */}
         <div className="w-1/2 pl-1">
-          <OrderBookList
-            type="ask"
-            data={displayAsks}
-          />
+          <OrderBookList type="ask" data={displayAsks} />
         </div>
       </div>
 
-      {/* Optional: Spread Display below columns */}
       {/* 
       <div className="mt-2 text-center">
         <SpreadDisplay spread={spread} spreadPercentage={spreadPercentage} />
